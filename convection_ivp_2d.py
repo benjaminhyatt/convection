@@ -105,7 +105,7 @@ reducer = flow_tools.GlobalArrayReducer(dist.comm_cart)
 # time-varying
 u = dist.VectorField(coords, name = 'u', bases = (xbasis, zbasis))
 T1 = dist.Field(name = 'T1', bases = (xbasis, zbasis))
-p1 = dist.Field(name = 'p1', bases = (xbasis, zbasis))
+p = dist.Field(name = 'p', bases = (xbasis, zbasis))
 
 # tau
 tau_u1 = dist.VectorField(coords, name = 'tau_u1', bases = xbasis)
@@ -116,7 +116,6 @@ tau_p = dist.Field(name = 'tau_p')
 
 # stationary
 T0 = dist.Field(name = 'T0', bases = (xbasis, zbasis)) 
-p0 = dist.Field(name = 'p0', bases = (xbasis, zbasis)) # related to T0
 Q = dist.Field(name = 'Q', bases = (xbasis, zbasis))
 k = dist.Field(name = 'k', bases = (xbasis, zbasis))
 
@@ -214,9 +213,9 @@ fH2['g'] = antiderivative(fH, fH2, zbasis, coords, 'z', 0, 0, xbasis)
 logger.info('right(integ(heating - cooling)): {:.3e}'.format(reducer.global_max(fH2(z = Lz)['g'])))
 
 ### Problem ###
-problem = d3.IVP([u, T1, p1, tau_u1, tau_u2, tau_T11, tau_T12, tau_p], namespace = locals())
+problem = d3.IVP([u, T1, p, tau_u1, tau_u2, tau_T11, tau_T12, tau_p], namespace = locals())
 problem.add_equation("trace(grad_u) + tau_p = 0") # continuity
-problem.add_equation("dt(u) - Rinv*div(grad_u) + grad(p1) - T1*ez + lift(tau_u2) = - u@grad(u)") # momentum
+problem.add_equation("dt(u) - Rinv*div(grad_u) + grad(p) - T1*ez + lift(tau_u2) = - u@grad(u)") # momentum
 problem.add_equation("dt(T1) - PRinv*div(grad_T1) + lift(tau_T12) = - u@grad(T1) - u@ez * (grad_ad + T0_z)", condition='nx!=0') # energy
 problem.add_equation("dt(T1) - PRinv*div(grad_T1) + lift(tau_T12) = - u@grad(T1) + k_z*dz(T1) + k*dz(dz(T1)) - u@ez * (grad_ad + T0_z) + Q + k_z*T0_z + k*T0_zz", condition='nx==0') # energy
 # does the laplacian term contribute when nx = 0? 
@@ -226,7 +225,7 @@ problem.add_equation("u(z = 0) = 0") # no slip
 problem.add_equation("u(z = Lz) = 0") # no slip
 problem.add_equation("dz(T1)(z = 0) = 0") # no flux
 problem.add_equation("T1(z = Lz) = 0") # fixed temp
-problem.add_equation("integ(p1) = 0") # pressure gauge
+problem.add_equation("integ(p) = 0") # pressure gauge
 
 ### Solver ###
 solver = problem.build_solver(timestepper)
