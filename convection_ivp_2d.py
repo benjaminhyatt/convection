@@ -8,7 +8,6 @@ This script is not optimized--once we have this as a working example,
 we will likely change our formulation to reduce the number of fields 
 and transforms to the extent feasible. 
 """
-import sys
 import numpy as np
 import dedalus.public as d3
 from mpi4py import MPI
@@ -18,7 +17,7 @@ from scipy.special import erf
 
 from dedalus.extras import flow_tools
 
-restart = sys.argv[1]
+#restart = sys.argv[1]
 
 ### Parameters ###
 dtype = np.float64
@@ -26,19 +25,20 @@ Lx, Lz = 1, 2
 Nx, Nz = 64, 256
 dealias = 3/2
 timestepper = d3.RK222
-safety = 0.3 # CFL prefactor
-stop_sim_time = 1e2
+safety = 0.1 # CFL prefactor
+stop_sim_time = 1e3
 
 # Prognostic
 P = 1e0 # Penetration parameter
 S = 1e3 # Stiffness
-Pr = 1e0 # Prandtl 
+Pr = 5e-1 # Prandtl 
 R = 4e2 # Reynolds (freefall)
 zeta = 1e-3 # also called mu, ratio between adiabatic flux at bottom to the internal heating flux from Q
 
 Pinv = 1/P
 Rinv = 1/R
-PRinv = Pinv*Rinv
+Prinv = 1/Pr
+PrRinv = Prinv*Rinv
 
 # Model values
 L_Q = 1e-1 
@@ -49,7 +49,7 @@ L_CZ = 1e0 # where to center jump in flux
 dwk = 7.5e-2 # scale of k jump
 dwT = 5e-2 # scale of T0 jump
 
-F_bot = zeta * Qmag * dH
+F_bot = zeta * Qmag * dH # 1e-3 * 1e0 * 2e-1 = 2e-4
 
 #delta_pred = 0.
 
@@ -66,14 +66,17 @@ def Q_func(z, z0, dw, Qmag, dH):
 def k_func(z, z0, dw, k_CZ, dk):
     return k_CZ + dk * H_func(z, z0, dw)
 
-def grad_rad_func(f_g, k_g):
-    return f_g / k_g
+#def grad_rad_func(f_g, k_g):
+#    return f_g / k_g
+def T_rad_func(f_g, k_g):
+    #return f_g / k_g
+    return -f_g / k_g
 
 # F = integ(f)
-def antiderivative(f, F, b, c, cstr, c0, F0, b1):
-    logger.info("Performing LBVP to get antiderivative")
+def antiderivative(f, F, b, c, cstr, c0, F0):
+    logger.info("Solving LBVP to get antiderivative")
     d = lambda A: d3.Differentiate(A, c[cstr])
-    tau_1 = dist.Field(name = 'tau_1', bases = b1)
+    tau_1 = dist.Field(name = 'tau_1')
     lb = b.derivative_basis(1)
     lift_b = lambda A: d3.Lift(A, lb, -1)
 
@@ -115,89 +118,102 @@ tau_T12 = dist.Field(name = 'tau_T12', bases = xbasis)
 tau_p = dist.Field(name = 'tau_p')
 
 # stationary
-T0 = dist.Field(name = 'T0', bases = (xbasis, zbasis)) 
-Q = dist.Field(name = 'Q', bases = (xbasis, zbasis))
-k = dist.Field(name = 'k', bases = (xbasis, zbasis))
+T0 = dist.Field(name = 'T0', bases = zbasis) 
+Q = dist.Field(name = 'Q', bases = zbasis)
+k = dist.Field(name = 'k', bases = zbasis)
 
-grad_rad = dist.Field(name = 'grad_rad', bases = (xbasis, zbasis))
-Q_int = dist.Field(name = 'Q_int', bases = (xbasis, zbasis))
-N2 = dist.Field(name = 'N2', bases = (xbasis, zbasis))
-k_z = dist.Field(name = 'k_z', bases = (xbasis, zbasis))
+grad_rad = dist.Field(name = 'grad_rad', bases = zbasis)
+#Q_int = dist.Field(name = 'Q_int', bases = (xbasis, zbasis))
+flux_of_z = dist.Field(name = 'flux_of_z', bases = zbasis)
+#N2 = dist.Field(name = 'N2', bases = (xbasis, zbasis))
 
-CZ_mask = dist.Field(name = 'CZ_mask', bases = (xbasis, zbasis))
+k_z = dist.Field(name = 'k_z', bases = zbasis)
+
+CZ_mask = dist.Field(name = 'CZ_mask', bases = zbasis)
 CZ_mask['g'] = H_func(z, 0.2, 0.05) * H_func_c(z, L_CZ, 0.05)
 
-T0_z = dist.Field(name = 'T0_z', bases = (xbasis, zbasis))
-T0_zz = dist.Field(name = 'T0_zz', bases = (xbasis, zbasis))
+T0_z = dist.Field(name = 'T0_z', bases = zbasis)
+T0_zz = dist.Field(name = 'T0_zz', bases = zbasis)
+
+T_ad = dist.Field(name = 'T_ad', bases = zbasis)
+T_rad_z0 = dist.Field(name = 'T_rad_z0', bases = zbasis)
 
 # substitutions
 grad_u = d3.grad(u) + ez*lift(tau_u1)
-grad_T1 = d3.grad(T1) + ez*lift(tau_T11)
+#grad_T1 = d3.grad(T1) + ez*lift(tau_T11)
+grad_T1 = d3.grad(T1)
 
-#T1_z_bar = d3.Component(dz(T1))
-#T1_z_bar = d3.Average(dz(T1), coords['x'])
-#T1_zz_bar = d3.Average(dz(dz(T1)), coords['x'])
+T1_z = dz(T1)
 
-#T1_z_bar = d3.Average(dz(T1), 'x')
-#T1_zz_bar = d3.Average(dz(dz(T1)), 'x')
-
-#T1_z_bar = d3.integ(dz(T1), 'x')
-#T1_zz_bar = d3.integ(dz(dz(T1)), 'x')
-
-#k_z = dz(k)
-
-#print(T1_z_bar.evaluate()['g'].shape)
-
-#T0_z = dz(T0)
-#T0_zz = dz(T0_z)
-
-k_RZ = dH / P / S
-k_CZ = k_RZ * zeta / (1 + zeta + Pinv)
+k_RZ = dH / P / S # 2e-1 / 1e0 / 1e3 = 2e-4
+k_CZ = k_RZ * zeta / (1 + zeta + Pinv) # 2e-4 * 1e-3 / (1 + 1e-3 + 1 / 1e0) = approx 1e-7
 k_ad = k_RZ * (1 + zeta) / (1 + zeta + Pinv)
 dk = k_RZ - k_CZ
 
-grad_ad = (Qmag * S * P) * (1 + zeta + Pinv)
+grad_ad = (Qmag * S * P) * (1 + zeta + Pinv) # 2001 with default params?
 grad_rad_top = (Qmag * S * P) * (1 + zeta)
-delta_grad = grad_ad - grad_rad_top
-
-#T1_z = dist.Field(name = 'T1_z', bases = (xbasis, zbasis)) # currently using for IC, but could use more heavily
 
 # set fields on grid
-Q['g'] = Q_func(z, L_Q, dwQ, Qmag, dH)
 k['g'] = k_func(z, L_CZ, dwk, k_CZ, dk)
-
-Q_int['g'] = antiderivative(Q, Q_int, zbasis, coords, 'z', 0, F_bot, xbasis)
-#tau_Q = dist.Field(name = 'tau_Q', bases = xbasis)
-#problem_Q = d3.LBVP([Q_int, tau_Q], namespace = locals())
-#problem_Q.add_equation("dz(Q_int) + lift(tau_Q) = Q")
-#problem_Q.add_equation("Q_int(z = 0) = F_bot")
-#solver_Q = problem_Q.build_solver()
-#solver_Q.solve()
-
-grad_rad['g'] = grad_rad_func(Q_int['g'], k['g'])
-N2['g'] = -grad_rad['g'] + grad_ad
-max_brunt = reducer.global_max(N2['g'])
-
+Q['g'] = Q_func(z, L_Q, dwQ, Qmag, dH)
 k_z.change_scales(dealias)
 k_z['g'] = dz(k).evaluate()['g']
 k_z.change_scales(1)
-flux = reducer.global_min(Q_int(z = L_CZ)['g'])
+
+flux_of_z['g'] = antiderivative(Q, flux_of_z, zbasis, coords, 'z', 0, F_bot)
+flux = reducer.global_min(flux_of_z(z = L_CZ)['g'])
+
+#print("flux = min(flux_of_z(z=L_CZ))", flux)
+
+flux_of_z.change_scales(1)
+k.change_scales(1)
+
+T_ad['g'] = -grad_ad
+T_rad_z0['g'] = T_rad_func(flux_of_z['g'], k['g'])
+
+max_brunt = reducer.global_max(T_rad_z0['g'] - T_ad['g'])
 
 zs = np.linspace(0, Lz, 1000)
 k_match = k_func(zs, L_CZ, dwk, k_CZ, dk)
-grad_rad_match = grad_rad_func(flux, k_match)
-z_match = np.interp(-grad_ad, -grad_rad_match, zs)
+
+#print("k_match", k_match)
+
+T_rad_match = T_rad_func(flux, k_match)
+z_match = np.interp(-grad_ad, T_rad_match, zs)
+
+#print("T_rad_match", T_rad_match)
+#print("-grad_ad", -grad_ad)
+#print("z_match", z_match)
 
 T0_zz.change_scales(dealias)
-T0_zz['g'] = dz(-grad_rad).evaluate()['g']
-T0_zz['g'] *= H_func(z_de, z_match - dwT, dwT) # or I could change scales back first and then use z?
-T0_zz.change_scales(1)
-T0_z['g'] = antiderivative(T0_zz, T0_z, zbasis, coords, 'z', 0, -grad_ad, xbasis)
+T0_zz['g'] = dz(T_rad_z0).evaluate()['g'] 
 
+# debugging
+#T0_zz_init = dist.Field(name = 'T0_zz_init', bases = zbasis)
+#T0_zz_init.change_scales(dealias)
+#T0_zz_init['g'] = T0_zz['g'] # this shows that there is already ringing at this stage - increasing Nz reduces ringing / confines to the endpoints, but it's still there... need to figure out why + how bad of a thing that is
+
+T0_zz['g'] *= H_func(z_de, z_match - dwT, dwT) 
+
+# debugging
+#T0_zz_H = dist.Field(name = 'T0_zz_H', bases = zbasis)
+#T0_zz_H.change_scales(dealias)
+#T0_zz_H['g'] = T0_zz['g']
+
+T0_zz.change_scales(1)
+T0_z['g'] = antiderivative(T0_zz, T0_z, zbasis, coords, 'z', 0, -grad_ad)
+
+delta_rad = -grad_rad_top + grad_ad
 delta_sim = reducer.global_max(T0_z(z = Lz)['g']) + grad_ad
-T0_zz['g'] *= delta_grad/delta_sim
-T0_z['g'] = antiderivative(T0_zz, T0_z, zbasis, coords, 'z', 0, -grad_ad, xbasis)
-T0['g'] = antiderivative(T0_z, T0, zbasis, coords, 'z', Lz, 1e0, xbasis)
+T0_zz['g'] *= delta_rad/delta_sim # for default params is approx -0.995
+
+# debugging
+#T0_zz_del = dist.Field(name = 'T0_zz_del', bases = zbasis)
+#T0_zz_del.change_scales(dealias)
+#T0_zz_del['g'] = T0_zz['g']
+
+T0_z['g'] = antiderivative(T0_zz, T0_z, zbasis, coords, 'z', 0, -grad_ad)
+T0['g'] = antiderivative(T0_z, T0, zbasis, coords, 'z', Lz, 1e0)
 
 Q.change_scales(1)
 k.change_scales(1)
@@ -206,21 +222,19 @@ T0_z.change_scales(1)
 T0_zz.change_scales(1)
 
 # check that heating and cooling cancel out
-fH = dist.Field(name = 'fH', bases = (xbasis, zbasis))
-fH2 = dist.Field(name = 'fH2', bases = (xbasis, zbasis))
+fH = dist.Field(name = 'fH', bases = zbasis)
+fH2 = dist.Field(name = 'fH2', bases = zbasis)
 fH['g'] = Q['g'] +  k_z['g']*T0_z['g'] + k['g']*T0_zz['g']
-fH2['g'] = antiderivative(fH, fH2, zbasis, coords, 'z', 0, 0, xbasis)
+fH2['g'] = antiderivative(fH, fH2, zbasis, coords, 'z', 0, 0)
 logger.info('right(integ(heating - cooling)): {:.3e}'.format(reducer.global_max(fH2(z = Lz)['g'])))
 
 ### Problem ###
 problem = d3.IVP([u, T1, p, tau_u1, tau_u2, tau_T11, tau_T12, tau_p], namespace = locals())
 problem.add_equation("trace(grad_u) + tau_p = 0") # continuity
 problem.add_equation("dt(u) - Rinv*div(grad_u) + grad(p) - T1*ez + lift(tau_u2) = - u@grad(u)") # momentum
-problem.add_equation("dt(T1) - PRinv*div(grad_T1) + lift(tau_T12) = - u@grad(T1) - u@ez * (grad_ad + T0_z)", condition='nx!=0') # energy
-problem.add_equation("dt(T1) - PRinv*div(grad_T1) + lift(tau_T12) = - u@grad(T1) + k_z*dz(T1) + k*dz(dz(T1)) - u@ez * (grad_ad + T0_z) + Q + k_z*T0_z + k*T0_zz", condition='nx==0') # energy
-# does the laplacian term contribute when nx = 0? 
-# maybe I am forced to evaluate - k_z*dz(T1) - k*dz(dz(T1) on rhs (explicitly) if I want to parallelize?
-# > is this because k and k_z act like non-constant coefficients in z? 
+problem.add_equation("dt(T1) - PrRinv*div(grad_T1) + dz(lift(tau_T11)) + lift(tau_T12) = - u@grad(T1) - u@ez * (T0_z - T_ad)", condition='nx!=0') # energy
+#problem.add_equation("dt(T1) + dz(lift(tau_T11)) + lift(tau_T12) - k_z*dz(T1) - k*dz(dz(T1)) = - u@grad(T1) - u@ez * (T0_z - T_ad) + Q + k_z*T0_z + k*T0_zz", condition='nx==0')
+problem.add_equation("dt(T1) + dz(lift(tau_T11)) + lift(tau_T12) - dz(k*T1_z) = - u@grad(T1) - u@ez * (T0_z - T_ad) + Q + k_z*T0_z + k*T0_zz", condition='nx==0')
 problem.add_equation("u(z = 0) = 0") # no slip
 problem.add_equation("u(z = Lz) = 0") # no slip
 problem.add_equation("dz(T1)(z = 0) = 0") # no flux
@@ -232,32 +246,63 @@ solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
 ### Initial conditions ###
-if not restart: 
-   
-   # predictive
-   #T_z = -grad_ad + (grad_ad - grad_rad['g']) * H_func(z, L_CZ + delta_pred, dwT)
-   #T1_z['g'] = T_z - T0_z['g']
-   #T1['g'] = antiderivative(T1_z, T1, zbasis, coords, 'z', Lz, 0, xbasis)
-
-   T1.fill_random('g', seed = 101, distribution = 'normal', scale = 1e-3)
-   #T1['g'] *= np.sin(np.pi*z)
-   #u.fill_random('g', seed = 101, distribution = 'normal', scale = 1e-3) # was trying to break symmetry... but it's not helping
-#else: # ToDo
-
+T1.fill_random('g', seed = 101, distribution = 'normal', scale = 1e-3)
+T1['g'] *= np.sin(2*np.pi*z/Lz)
 
 ### Analysis tasks ToDo ###
-slices = solver.evaluator.add_file_handler('slices', sim_dt=0.25, max_writes=50)
-slices.add_task(T1, name='temp')
-slices.add_task(ez@u, name='u_z')
+#snapshots = solver.evaluator.add_file_handler('snapshots', iter=1)
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt = 0.25)
+snapshots.add_task(T1, name='temp')
+#snapshots.add_task(T1/(d3.integ(np.abs(T1), coords['x'])), name='temp-anom')
+snapshots.add_task(T1/np.sqrt(d3.integ(T1*T1)), name='temp-rms')
+snapshots.add_task(ex@u, name='u_x')
+snapshots.add_task(ez@u, name='u_z')
+snapshots.add_task(p, name='pressure')
 
-#profiles = solver.evaluator.add_file_handler('profiles', sim_dt=0.25, max_writes=50)
+#T = T0 + T1
+#Tbar = d3.integ(T, coords['x'])
+#Tp = T - Tbar
+#snapshots.add_task(Tp, name='Tp')
+#snapshots.add_task(Tp/(d3.integ(np.abs(Tp), coords['x'])), name='Tp-anom')
+
+# normalize by an rms of T1
+
+profiles = solver.evaluator.add_file_handler('profiles', sim_dt = 1.)
+# these should all be time stationary, but double-checking for sanity
+profiles.add_task(Q, name='heating')
+profiles.add_task(k_z*T0_z + k*T0_zz, name='cooling')
+profiles.add_task(flux_of_z, name='Qflux')
+profiles.add_task(k, name='kprof')
+profiles.add_task(T_rad_z0, name='T_rad_z0prof')
+profiles.add_task(T0, name='T0')
+profiles.add_task(T0_z, name='T0_z')
+profiles.add_task(T0_zz, name='T0_zz')
+profiles.add_task(k_z*T0_z, name='k_zT0_z')
+profiles.add_task(k*T0_zz, name='kT0_zz')
+profiles.add_task(fH, name='fHprof')
+profiles.add_task(fH2, name='fH2prof')
+profiles.add_task(T0_z - T_ad, name='T0_z-T_ad')
+
+#profiles.add_task(T0_zz_init, name='T0_zz_init')
+#profiles.add_task(T0_zz_H, name='T0_zz_H')
+#profiles.add_task(T0_zz_del, name='T0_zz_del')
+
+# checking terms comprising dz(T_rad_z0)
+profiles.add_task((-flux_of_z/(k**2))*k_z, name='Qfluxk2k_z')
+profiles.add_task(-flux_of_z/(k**2), name='Qfluxk2')
+profiles.add_task(k_z, name='k_zprof')
+profiles.add_task(Q/k, name='Qzprof')
+profiles.add_task(k**(-1), name='k1')
+profiles.add_task(k**(-2), name='k2')
+
 
 ### Flow tools ###
-
 t_ff = 1/np.sqrt(Qmag)
 t_N2 = np.sqrt(1/max_brunt)
 max_t_step = np.min((0.5*t_ff, t_N2))
-t_step = max_t_step
+#t_step = max_t_step
+t_step = 1e-5
+print("Beginning with t_step = ", t_step)
 
 CFL = d3.CFL(solver, initial_dt=t_step, cadence=1, safety=safety, threshold=0.1,
              max_change=1.5, min_change=0.25, max_dt=max_t_step)
@@ -266,33 +311,23 @@ CFL.add_velocity(u)
 flow = d3.GlobalFlowProperty(solver, cadence=1)
 flow.add_property(R*np.sqrt(u@u), name = 'Re')
 flow.add_property(d3.integ(dz(T1)), name = 'T1_z')
-flow.add_property(-Rinv*d3.div(grad_u), name='lapu')
-flow.add_property(ex@d3.grad(p1), name='gradp1x')
-flow.add_property(ez@d3.grad(p1), name='gradp1z')
-flow.add_property(-T1*ez, name='T1ez')
-flow.add_property(lift(tau_u2), name='lift')
+#flow.add_property(-Rinv*d3.div(grad_u), name='lapu')
+#flow.add_property(ex@d3.grad(p), name='gradpx')
+#flow.add_property(ez@d3.grad(p), name='gradpz')
+#flow.add_property(-T1*ez, name='T1ez')
+#flow.add_property(lift(tau_u2), name='lift')
 #flow.add_property(d3.Average(max_brunt * (CZ_mask * np.sqrt(u@u))**(-1)), name = 'S')
-# ToDo: P tracker?
 
 ### Main loop ###
-# ToDo: (add more fancy tracking?)
-
-
 try:
     logger.info('Starting main loop')
     while solver.proceed:
-        #print(T1['g'].min(), T1['g'].max())
         t_step = CFL.compute_timestep()
         solver.step(t_step)
         if (solver.iteration - 1) % 20 == 0:
             max_Re = flow.max('Re')
             avg_Re = flow.grid_average('Re')
             avg_T1_z = flow.max('T1_z')
-            print('-Rinv*lapu', flow.min('lapu'), flow.max('lapu'), flow.grid_average('lapu'))
-            print('gradp1x', flow.min('gradp1x'), flow.max('gradp1x'), flow.grid_average('gradp1x'))
-            print('gradp1z', flow.min('gradp1z'), flow.max('gradp1z'), flow.grid_average('gradp1z'))
-            print('-T1ez', flow.min('T1ez'), flow.max('T1ez'), flow.grid_average('T1ez'))
-            print('lift', flow.min('lift'), flow.max('lift'), flow.grid_average('lift'))
             logger.info('Iteration=%i, Time=%e, dt=%e, max(Re)=%f, avg(Re)=%f, integ(dz(T1))=%f' %(solver.iteration, solver.sim_time, t_step, max_Re, avg_Re, avg_T1_z))
 except:
     logger.error('Exception raised, triggering end of main loop.')
