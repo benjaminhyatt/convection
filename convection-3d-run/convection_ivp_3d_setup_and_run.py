@@ -443,7 +443,7 @@ profiles = solver.evaluator.add_file_handler(profiles_dir, sim_dt = an_cad, mode
 profiles.add_task(T_bar, name='T_bar')
 profiles.add_task(T1_bar, name='T1_bar')
 profiles.add_task(np.sqrt(T_fluc_norm), name='T_fluc_norm')
-profiles.add_task(T_fluc, name='T_fluc')
+#profiles.add_task(T_fluc, name='T_fluc')
 
 profiles.add_task(F_conv_bar, name='F_conv_bar')
 profiles.add_task(F_rad_bar, name='F_rad_bar')
@@ -492,7 +492,8 @@ checkpoints.add_tasks(solver.state)
 
 ##### Main loop #####
 
-t_step = init_dt
+#t_step = init_dt
+t_step = 8e-4
 logger.info('Starting main loop with t_step = %e' %(t_step))
 try:
     while solver.proceed:
@@ -506,7 +507,7 @@ try:
             log_string += 'Re: {:8.10e}/{:8.10e}, '.format(max_Re, avg_Re)
             log_string += 'mean_T1_bot: {:8.10e}, '.format(avg_T1_bot)
             logger.info(log_string)
-        t_step = CFL.compute_timestep()
+        #t_step = CFL.compute_timestep()
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
