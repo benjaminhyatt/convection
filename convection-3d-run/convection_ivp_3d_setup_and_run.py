@@ -69,7 +69,7 @@ output_suffix = 'mu_{:.0e}'.format(mu) + '_R_{:.0e}'.format(R) + '_Ro_{:.0e}'.fo
 output_suffix = output_suffix.replace('-','m').replace('+','p')
 
 an_cad = 0.25 # analysis cadence in freefall times
-cp_cad = 100 # checkpoint cadence in freefall times
+cp_cad = 20 # checkpoint cadence in freefall times
 
 # Initialization
 restart = False
@@ -416,7 +416,8 @@ T = T0 + T1
 T1_bar = d3.integ(d3.integ(T1, coords['x']), coords['y']) / Lx / Ly
 T_bar = T0 + T1_bar
 T_fluc = T1 - T1_bar
-T_fluc_norm = d3.integ(d3.integ(np.sqrt(T_fluc**2), coords['x']), coords['y']) / Lx / Ly
+#T_fluc_norm = d3.integ(d3.integ(np.sqrt(T_fluc**2), coords['x']), coords['y']) / Lx / Ly
+T_fluc_norm = d3.integ(d3.integ(T_fluc*T_fluc, coords['x']), coords['y']) / Lx / Ly
 
 F_conv_bar = d3.integ(d3.integ(uz * T, coords['x']), coords['y']) / Lx / Ly
 F_rad_bar = -k * dz(T_bar)
@@ -446,7 +447,7 @@ grad = -dz(T_bar)
 snapshots_dir = 'snapshots_' + output_suffix
 snapshots = solver.evaluator.add_file_handler(filename = snapshots_dir, sim_dt = an_cad, mode=file_handler_mode)
 y_slice = Ly / 2
-#snapshots.add_task(T_fluc(y = y_slice), scales=dealias, name='T_fluc')
+snapshots.add_task(T_fluc(y = y_slice), scales=dealias, name='T_fluc')
 snapshots.add_task(uz(y = y_slice), scales=dealias, name='u_z')
 snapshots.add_task(wy(y = y_slice), scales=dealias, name='w_y')
 z_slice = Lz / 4
@@ -454,9 +455,10 @@ snapshots.add_task(wz(z = z_slice), scales=dealias, name='w_z')
 
 profiles_dir = 'profiles_' + output_suffix
 profiles = solver.evaluator.add_file_handler(profiles_dir, sim_dt = an_cad, mode=file_handler_mode)
-#profiles.add_task(T_bar, name='T_bar')
-#profiles.add_task(T1_bar, name='T1_bar')
-#profiles.add_task(T_fluc_norm, name='T_fluc_norm')
+profiles.add_task(T_bar, name='T_bar')
+profiles.add_task(T1_bar, name='T1_bar')
+profiles.add_task(np.sqrt(T_fluc_norm), name='T_fluc_norm')
+profiles.add_task(T_fluc, name='T_fluc')
 
 #profiles.add_task(F_conv_bar, name='F_conv_bar')
 #profiles.add_task(F_rad_bar, name='F_rad_bar')
@@ -478,7 +480,7 @@ profiles_0.add_task(F_tot_bar_RHS, name='F_tot_bar_RHS')
 scalars_dir = 'scalars_' + output_suffix
 scalars = solver.evaluator.add_file_handler(scalars_dir, sim_dt = an_cad, mode=file_handler_mode)
 scalars.add_task(R*d3.Average(ux**2 + uy**2 + uz**2), name = 'mean_Re')
-#scalars.add_task(T1_bar(z = 0), name = 'mean_T1_bot')
+scalars.add_task(T1_bar(z = 0), name = 'mean_T1_bot')
 
 ##### Flow tools #####
 
@@ -510,8 +512,7 @@ logger.info('Starting main loop with t_step = %e' %(t_step))
 try:
     while solver.proceed:
         solver.step(t_step)
-        #if (solver.iteration - 1) % 20 == 0:
-        if (solver.iteration - 1) % 1 == 0:
+        if (solver.iteration - 1) % 20 == 0:
             max_Re = flow.max('Re')
             avg_Re = flow.volume_integral('Re') / Lx / Ly / Lz
             avg_T1_bot = flow.grid_average('T1_bot')
