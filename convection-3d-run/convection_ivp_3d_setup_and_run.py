@@ -432,11 +432,11 @@ grad = -dz(T_bar)
 snapshots_dir = 'snapshots_' + output_suffix
 snapshots = solver.evaluator.add_file_handler(filename = snapshots_dir, sim_dt = an_cad, mode=file_handler_mode)
 y_slice = Ly / 2
-snapshots.add_task(T_fluc(y = y_slice), scales=dealias, name='T_fluc')
-snapshots.add_task(uz(y = y_slice), scales=dealias, name='u_z')
-snapshots.add_task(wy(y = y_slice), scales=dealias, name='w_y')
+snapshots.add_task(T_fluc(y = y_slice), name='T_fluc')
+snapshots.add_task(uz(y = y_slice), name='u_z')
+snapshots.add_task(wy(y = y_slice), name='w_y')
 z_slice = Lz / 4
-snapshots.add_task(wz(z = z_slice), scales=dealias, name='w_z')
+snapshots.add_task(wz(z = z_slice), name='w_z')
 
 profiles_dir = 'profiles_' + output_suffix
 profiles = solver.evaluator.add_file_handler(profiles_dir, sim_dt = an_cad, mode=file_handler_mode)
