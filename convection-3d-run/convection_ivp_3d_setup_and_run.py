@@ -426,23 +426,8 @@ F_Q = flux_of_z - F_bot
 F_tot_bar_RHS = flux_of_z
 
 grad = -dz(T_bar)
-
-#T = T0 + T1
-#T1_bar = d3.Average(T1, (coords['x'], coords['y']))
-#T_bar = T0 + T1_bar
-#T_fluc = T1 - T1_bar
-#T_fluc_norm = d3.Average(np.sqrt(T_fluc**2), (coords['x'], coords['y']))
-
-#F_conv_bar = d3.Average(uz * T, (coords['x'], coords['y']))
-#F_conv_bar = d3.Average(uz * (T0 + T1), (coords['x'], coords['y']))
-#F_rad_bar = -k * dz(T_bar)
-#F_tot_bar_LHS = F_conv_bar + F_rad_bar
-#F_Q = flux_of_z - F_bot
-#F_tot_bar_RHS = flux_of_z
-
 #grad_rad_0 = (F_tot_bar_RHS)/k
 #grad_rad = (F_tot_bar_LHS)/k
-#grad = -dz(T_bar)
 
 snapshots_dir = 'snapshots_' + output_suffix
 snapshots = solver.evaluator.add_file_handler(filename = snapshots_dir, sim_dt = an_cad, mode=file_handler_mode)
@@ -460,13 +445,13 @@ profiles.add_task(T1_bar, name='T1_bar')
 profiles.add_task(np.sqrt(T_fluc_norm), name='T_fluc_norm')
 profiles.add_task(T_fluc, name='T_fluc')
 
-#profiles.add_task(F_conv_bar, name='F_conv_bar')
-#profiles.add_task(F_rad_bar, name='F_rad_bar')
-#profiles.add_task(F_tot_bar_LHS, name='F_tot_bar_LHS')
+profiles.add_task(F_conv_bar, name='F_conv_bar')
+profiles.add_task(F_rad_bar, name='F_rad_bar')
+profiles.add_task(F_tot_bar_LHS, name='F_tot_bar_LHS')
 
 ###profiles.add_task(grad_rad_0/grad_ad, name='gradrad_0') # this is the "specified" grad_rad
 ###profiles.add_task(grad_rad/grad_ad, name='gradrad') # should track grad_rad in a time average sense / once at equilibrium
-#profiles.add_task(grad/grad_ad, name='grad')
+profiles.add_task(grad/grad_ad, name='grad')
 
 profiles_0_dir = 'profiles_0_' + output_suffix
 profiles_0 = solver.evaluator.add_file_handler(profiles_0_dir, sim_dt = stop_sim_time/5, mode=file_handler_mode) # will output a few times
